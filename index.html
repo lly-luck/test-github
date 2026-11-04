@@ -3,13 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>点击按钮换背景色</title>
+  <title>点击按钮，颜色从中心铺满全屏</title>
   <style>
     * { box-sizing: border-box; }
 
     html, body {
       height: 100%;
       margin: 0;
+      overflow: hidden;
     }
 
     body {
@@ -18,24 +19,50 @@
       justify-content: center;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
                    "Microsoft YaHei", "PingFang SC", sans-serif;
-      background-color: #f5f5f5;
-      transition: background-color 0.4s ease;
+      background-color: #f2f3f5;
     }
 
+    /* ── 从中心扩散出去的颜色层（在卡片下方）──────────────── */
+    .ripple {
+      --c:  transparent;   /* 主色 */
+      --c0: transparent;   /* 同色但全透明，用于前沿柔和过渡 */
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 165vmax;
+      height: 165vmax;
+      margin: -82.5vmax 0 0 -82.5vmax;
+      border-radius: 50%;
+      /* 90% 以内是实色，最后 10% 渐隐，形成“渐变延伸”的前沿。
+         实色半径 = 165/2 × 0.9 = 74.25vmax，大于正方形视口的
+         半对角线 70.7vmax，保证动画结束时四角也已被实色完全覆盖。 */
+      background: radial-gradient(circle at 50% 50%,
+                  var(--c) 0%, var(--c) 90%, var(--c0) 100%);
+      transform: scale(0);
+      transform-origin: 50% 50%;
+      pointer-events: none;
+      z-index: 0;
+      will-change: transform;
+    }
+
+    /* ── 内容卡片 ─────────────────────────────────────────── */
     .panel {
+      position: relative;
+      z-index: 1;
       padding: 40px 48px;
-      border-radius: 16px;
-      background: rgba(255, 255, 255, 0.88);
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.86);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
       text-align: center;
-      transition: background-color 0.4s ease;
     }
 
     h1 {
       margin: 0 0 28px;
       font-size: 22px;
       font-weight: 600;
-      color: #222;
+      color: #1f2328;
     }
 
     .buttons {
@@ -51,6 +78,7 @@
       border-radius: 10px;
       font-size: 16px;
       font-weight: 600;
+      font-family: inherit;
       color: #fff;
       cursor: pointer;
       transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -59,7 +87,12 @@
 
     button:hover  { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0, 0, 0, 0.22); }
     button:active { transform: translateY(0);    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); }
-    button:focus-visible { outline: 3px solid #333; outline-offset: 3px; }
+    button:focus-visible { outline: 3px solid #1f2328; outline-offset: 3px; }
+
+    button[aria-pressed="true"] {
+      outline: 3px solid rgba(31, 35, 40, 0.75);
+      outline-offset: 3px;
+    }
 
     .btn-red   { background-color: #e53935; }
     .btn-green { background-color: #43a047; }
@@ -68,33 +101,84 @@
     .hint {
       margin: 26px 0 0;
       font-size: 13px;
-      color: #666;
+      color: #57606a;
       letter-spacing: 0.5px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      button { transition: none; }
     }
   </style>
 </head>
 <body>
+  <div class="ripple" aria-hidden="true"></div>
+
   <div class="panel">
-    <h1>点击按钮，改变页面颜色</h1>
+    <h1>点击按钮，颜色从中心铺满全屏</h1>
     <div class="buttons">
-      <button class="btn-red"   data-color="#e53935" data-name="红色">红色</button>
-      <button class="btn-green" data-color="#43a047" data-name="绿色">绿色</button>
-      <button class="btn-blue"  data-color="#1e88e5" data-name="蓝色">蓝色</button>
+      <button class="btn-red"   data-color="#e53935" data-name="红色" aria-pressed="false">红色</button>
+      <button class="btn-green" data-color="#43a047" data-name="绿色" aria-pressed="false">绿色</button>
+      <button class="btn-blue"  data-color="#1e88e5" data-name="蓝色" aria-pressed="false">蓝色</button>
     </div>
     <p class="hint" id="hint">当前背景：默认</p>
   </div>
 
   <script>
-    document.querySelectorAll('button[data-color]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var color = btn.dataset.color;
-        var name  = btn.dataset.name;
+    (function () {
+      var ripple = document.querySelector('.ripple');
+      var hint   = document.getElementById('hint');
+      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
 
+      var DURATION = 700;   // 从中心铺满全屏所需毫秒数
+      var anim = null;      // 正在进行的动画
+
+      function settle(color, name) {
         document.body.style.backgroundColor = color;
-        document.title = name + ' · 点击按钮换背景色';
-        document.getElementById('hint').textContent = '当前背景：' + name;
+        hint.textContent = '当前背景：' + name;
+      }
+
+      function paint(color, name) {
+        // 系统开启了「减少动态效果」，或浏览器不支持 WAAPI：直接换色
+        if (reduce.matches || typeof ripple.animate !== 'function') {
+          settle(color, name);
+          return;
+        }
+
+        if (anim) { anim.cancel(); anim = null; }
+
+        // 8 位十六进制，末尾 00 = 全透明，RGB 保持一致，
+        // 渐变插值时不会发灰（比用 transparent 关键字更干净）
+        ripple.style.setProperty('--c',  color);
+        ripple.style.setProperty('--c0', color + '00');
+
+        var a = ripple.animate(
+          [{ transform: 'scale(0)' }, { transform: 'scale(1)' }],
+          { duration: DURATION, easing: 'cubic-bezier(0.2, 0.6, 0.2, 1)', fill: 'both' }
+        );
+        anim = a;
+
+        // 文案立即反馈，颜色在动画结束时落定为页面背景
+        hint.textContent = '正在铺满：' + name + '…';
+        document.title = name + ' · 从中心铺满全屏';
+
+        a.onfinish = function () {
+          if (anim !== a) return;   // 已被新的点击取代
+          settle(color, name);
+          a.cancel();               // 复位为 scale(0)，由 body 背景接管
+          anim = null;
+        };
+      }
+
+      var buttons = document.querySelectorAll('button[data-color]');
+      Array.prototype.forEach.call(buttons, function (btn) {
+        btn.addEventListener('click', function () {
+          paint(btn.dataset.color, btn.dataset.name);
+          Array.prototype.forEach.call(buttons, function (b) {
+            b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+          });
+        });
       });
-    });
+    })();
   </script>
 </body>
 </html>
