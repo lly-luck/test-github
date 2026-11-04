@@ -29,15 +29,17 @@
       position: fixed;
       top: 50%;
       left: 50%;
-      width: 165vmax;
-      height: 165vmax;
-      margin: -82.5vmax 0 0 -82.5vmax;
+      width: 190vmax;
+      height: 190vmax;
+      margin: -95vmax 0 0 -95vmax;
       border-radius: 50%;
-      /* 90% 以内是实色，最后 10% 渐隐，形成“渐变延伸”的前沿。
-         实色半径 = 165/2 × 0.9 = 74.25vmax，大于正方形视口的
-         半对角线 70.7vmax，保证动画结束时四角也已被实色完全覆盖。 */
+      /* 77% 以内是实色，最后 23% 渐隐 —— 一条约 22vmax 宽的柔和前沿。
+         加宽渐隐带会吃掉实色半径，所以圆也要同步放大：
+         实色半径 = 190/2 × 0.77 = 73.15vmax，
+         大于正方形视口的半对角线 70.7vmax（留约 3.5% 余量），
+         动画结束时四角一定已经落满实色，再交给 body 背景无缝接管。 */
       background: radial-gradient(circle at 50% 50%,
-                  var(--c) 0%, var(--c) 90%, var(--c0) 100%);
+                  var(--c) 0%, var(--c) 77%, var(--c0) 100%);
       transform: scale(0);
       transform-origin: 50% 50%;
       pointer-events: none;
@@ -129,7 +131,7 @@
       var hint   = document.getElementById('hint');
       var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-      var DURATION = 700;   // 从中心铺满全屏所需毫秒数
+      var DURATION = 1600;  // 从中心铺满全屏所需毫秒数
       var anim = null;      // 正在进行的动画
 
       function settle(color, name) {
@@ -153,7 +155,7 @@
 
         var a = ripple.animate(
           [{ transform: 'scale(0)' }, { transform: 'scale(1)' }],
-          { duration: DURATION, easing: 'cubic-bezier(0.2, 0.6, 0.2, 1)', fill: 'both' }
+          { duration: DURATION, easing: 'cubic-bezier(0.45, 0, 0.25, 1)', fill: 'both' }
         );
         anim = a;
 
